@@ -22,6 +22,7 @@ extern const lv_img_dsc_t wifi;
 
 // Background frames
 extern const lv_img_dsc_t *bg_frames[16];
-extern const lv_img_dsc_t *firebg_frames[13];
+extern const lv_img_dsc_t *fire_frames[12];
+extern const int NUM_FIRE_FRAMES;
 
 #endif // IMAGES_H

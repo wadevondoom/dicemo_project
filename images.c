@@ -10,6 +10,7 @@ LV_IMG_DECLARE(d20);
 LV_IMG_DECLARE(dpercent);
 LV_IMG_DECLARE(nodie);
 LV_IMG_DECLARE(dicemo);
+LV_IMG_DECLARE(dicemo_mad);
 LV_IMG_DECLARE(clearfav);
 LV_IMG_DECLARE(clearmemory);
 LV_IMG_DECLARE(mute);
@@ -47,7 +48,6 @@ LV_IMG_DECLARE(fire08);
 LV_IMG_DECLARE(fire09);
 LV_IMG_DECLARE(fire10);
 LV_IMG_DECLARE(fire11);
-LV_IMG_DECLARE(fire12);
 
 const lv_img_dsc_t *bg_frames[16] = {
     &bg00, &bg01, &bg02, &bg03,
@@ -56,9 +56,9 @@ const lv_img_dsc_t *bg_frames[16] = {
     &bg12, &bg13, &bg14, &bg15
 };
 
-const lv_img_dsc_t *firebg_frames[13] = {
+const lv_img_dsc_t *fire_frames[12] = {
     &fire00, &fire01, &fire02, &fire03,
     &fire04, &fire05, &fire06, &fire07,
-    &fire08, &fire09, &fire10, &fire11,
-    &fire12
+    &fire08, &fire09, &fire10, &fire11
 };
+const int NUM_FIRE_FRAMES = sizeof(fire_frames) / sizeof(fire_frames[0]);

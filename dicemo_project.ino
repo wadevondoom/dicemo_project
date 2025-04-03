@@ -14,7 +14,6 @@
 #include <Preferences.h>
 #include "dicemo_quotes.h"
 
-
 HWCDC USBSerial;
 #define EXAMPLE_LVGL_TICK_PERIOD_MS 2
 #define SCREEN_WIDTH 240
@@ -107,6 +106,9 @@ static lv_obj_t *dicemo_bubble = NULL;
 static lv_obj_t *dicemo_text_label = NULL;
 static lv_coord_t single_col[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
 static lv_coord_t single_row[] = {LV_GRID_FR(1), LV_GRID_TEMPLATE_LAST};
+static lv_obj_t *fire_img_obj = NULL;
+static int fire_frame_index = 0;
+static lv_timer_t* fire_timer = NULL;
 
 // Global variable to track  timer
 static lv_timer_t *transition_timer = NULL;
@@ -725,6 +727,12 @@ void update_background(lv_timer_t *timer) {
     // USBSerial.printf("Background updated to frame %d\n", bg_frame);
 }
 
+void update_fire_background(lv_timer_t *timer) {
+    if (!fire_img_obj) return;
+    lv_img_set_src(fire_img_obj, fire_frames[fire_frame_index]);
+    fire_frame_index = (fire_frame_index + 1) % NUM_FIRE_FRAMES;
+}
+
 void update_fav_indicator_label() {
     // Check if all favorites are identical
     bool identical = true;
@@ -836,9 +844,15 @@ void create_main_ui() {
     lv_obj_clear_flag(dicemo_widget, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(dicemo_widget, LV_OBJ_FLAG_HIDDEN);  // start hidden
 
+    fire_img_obj = lv_img_create(dicemo_widget);
+    lv_obj_set_size(fire_img_obj, 240, 280);
+    lv_obj_align(fire_img_obj, LV_ALIGN_CENTER, 0, 0);
+    lv_img_set_src(fire_img_obj, fire_frames[0]);
+    lv_obj_move_background(fire_img_obj); // ensure it stays behind the mascot + bubble
+
     dicemo_bubble = lv_obj_create(dicemo_widget);
-    lv_obj_set_size(dicemo_bubble, 120, 180);  // slightly wider
-    lv_obj_align(dicemo_bubble, LV_ALIGN_TOP_MID, -50, 20); // adjusted position
+    lv_obj_set_size(dicemo_bubble, 160, 80);  // slightly wider
+    lv_obj_align(dicemo_bubble, LV_ALIGN_TOP_MID, -25, 15); // adjusted position
     lv_obj_set_style_bg_color(dicemo_bubble, lv_color_white(), 0);
     lv_obj_set_style_radius(dicemo_bubble, 10, 0);
     lv_obj_set_style_bg_opa(dicemo_bubble, LV_OPA_COVER, 0);
@@ -847,64 +861,76 @@ void create_main_ui() {
 
     dicemo_text_label = lv_label_create(dicemo_bubble);
     lv_label_set_long_mode(dicemo_text_label, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(dicemo_text_label, 100);  // Make sure it wraps nicely
+    lv_obj_set_width(dicemo_text_label, 140);  // Make sure it wraps nicely
     lv_obj_align(dicemo_text_label, LV_ALIGN_CENTER, 0, 0);
     lv_label_set_text(dicemo_text_label, "");
     lv_obj_set_style_text_font(dicemo_text_label, &robot, 0);
     lv_obj_set_style_text_color(dicemo_text_label, lv_color_black(), 0);
 
-    lv_obj_t *dicemo_img = lv_img_create(dicemo_widget);
-    lv_img_set_src(dicemo_img, &dicemo); // This is 120x180
-    lv_obj_align(dicemo_img, LV_ALIGN_BOTTOM_MID, 60, -20);  // Slight offset to the left
+    dicemo_img_obj = lv_img_create(dicemo_widget);
+    lv_img_set_src(dicemo_img_obj, &dicemo);
+    lv_obj_align(dicemo_img_obj, LV_ALIGN_BOTTOM_MID, 60, -5);
 
     USBSerial.println("UI Updated: Main screen assigned, labels repositioned, separators added.");
 }
 
 void show_dicemo_saying(DicemoQuoteType type, const char* optional_sound = NULL, bool reset_timer = true) {
-    if (!dicemo_widget || !dicemo_text_label || !dicemo_bubble) {
-        USBSerial.println("❌ Dicemo widget or label not initialized!");
+    if (!dicemo_widget || !dicemo_text_label || !dicemo_bubble || !dicemo_img_obj || !fire_img_obj) {
+        USBSerial.println("❌ Dicemo widget or child components not initialized!");
         return;
     }
 
-    // Ensure backlight is ON
+    // Wake the screen
     digitalWrite(LCD_BL, HIGH);
 
-    // Only reset activity timer if explicitly allowed
+    // Activity timer logic
     if (reset_timer) {
         lastActivityTime = millis();
     } else {
-        // If we’re already in the 5–10 min countdown, turn BL off after 10 sec.
         unsigned long idleTime = millis() - lastActivityTime;
         if (idleTime > backlightTimeout && idleTime < deepSleepTimeout) {
             lv_timer_create([](lv_timer_t *t) {
                 digitalWrite(LCD_BL, LOW);
                 USBSerial.println("🔅 Turning BL off after periodic Dicemo message.");
                 lv_timer_del(t);
-            }, 10000, NULL); // 10 seconds
+            }, 10000, NULL);
         }
     }
 
+    // Set text
     lv_label_set_text(dicemo_text_label, get_random_quote(type));
 
-    // Set starting Y below the screen
+    // 🔥 Start fire background animation
+    fire_frame_index = 0;
+    lv_img_set_src(fire_img_obj, fire_frames[0]);
+    lv_obj_move_background(fire_img_obj);
+
+    if (fire_timer) {
+        lv_timer_del(fire_timer);
+        fire_timer = NULL;
+    }
+    fire_timer = lv_timer_create(update_fire_background, 120, NULL);
+
+    // Animation setup
     lv_obj_set_y(dicemo_widget, SCREEN_HEIGHT);
     lv_obj_clear_flag(dicemo_widget, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(dicemo_widget);
 
-    // Bounce-in animation
     lv_anim_t a;
     lv_anim_init(&a);
     lv_anim_set_var(&a, dicemo_widget);
-    lv_anim_set_values(&a, SCREEN_HEIGHT, 0); // From off-screen to 0
+    lv_anim_set_values(&a, SCREEN_HEIGHT, 0);
     lv_anim_set_time(&a, 400);
-    lv_anim_set_path_cb(&a, lv_anim_path_overshoot); // Bouncy effect
+    lv_anim_set_path_cb(&a, lv_anim_path_overshoot);
     lv_anim_set_exec_cb(&a, (lv_anim_exec_xcb_t)lv_obj_set_y);
     lv_anim_start(&a);
 
+    // 🎵 Optional sound
     if (optional_sound && !isMuted) {
         play_named_sound(optional_sound);
     }
 
+    // Auto-hide after 6 seconds
     lv_timer_create([](lv_timer_t *t) {
         lv_anim_t hide;
         lv_anim_init(&hide);
@@ -915,11 +941,17 @@ void show_dicemo_saying(DicemoQuoteType type, const char* optional_sound = NULL,
         lv_anim_set_path_cb(&hide, lv_anim_path_ease_in);
         lv_anim_set_ready_cb(&hide, [](lv_anim_t *a) {
             lv_obj_add_flag(dicemo_widget, LV_OBJ_FLAG_HIDDEN);
+
+            // 🔥 Stop fire background
+            if (fire_timer) {
+                lv_timer_del(fire_timer);
+                fire_timer = NULL;
+            }
         });
         lv_anim_start(&hide);
 
         lv_timer_del(t);
-    }, 6000, NULL);
+    }, 8000, NULL);
 }
 
 /**
@@ -1755,51 +1787,43 @@ void roll_animation(lv_timer_t *timer) {
     snprintf(last_roll_result, sizeof(last_roll_result), "%d", total);
     lv_label_set_text(dice_result_label, last_roll_result);
 
-    // --- QUOTE SELECTION ---
-    if (num_rolled_dice == 1 && rolled_types[0] == 20) {
-        // 1d20 Crit / Fail behavior (hard-coded)
-        if (rolled_values[0] == 20) {
-            USBSerial.println("🎯 CRITICAL HIT!");
-            pending_quote_type = QUOTE_HAPPY;
-        } else if (rolled_values[0] == 1) {
-            USBSerial.println("💩 CRITICAL FAIL!");
-            pending_quote_type = QUOTE_MAD;
-        } else if ((esp_random() % 4) == 0) { // 25% chance to trigger
-            pending_quote_type = QUOTE_NEUTRAL;
-        } else {
-            pending_quote_type = QUOTE_NONE;
-        }
-    } else {
-        // Multi-dice evaluation — random chance
-        if ((esp_random() % 4) == 0) { // 25% chance to trigger
-            float efficiency_sum = 0.0f;
-            int total_evaluated = 0;
+        // --- UNIFIED QUOTE SELECTION (Efficiency + Forced Crit/Fail) ---
+        float avg_efficiency = calculate_roll_efficiency();
+        USBSerial.printf("🎯 Roll Efficiency: %.2f\n", avg_efficiency);
 
-            for (int i = 0; i < num_rolled_dice; i++) {
-                int roll = rolled_values[i];
-                int sides = rolled_types[i];
-
-                if (sides <= 1) continue;
-
-                float eff = (float)(roll - 1) / (float)(sides - 1);
-                efficiency_sum += eff;
-                total_evaluated++;
-            }
-
-            float avg_efficiency = total_evaluated > 0 ? (efficiency_sum / total_evaluated) : 0.5f;
-            USBSerial.printf("🎯 Roll Efficiency: %.2f\n", avg_efficiency);
-
-            if (avg_efficiency >= 0.75f) {
+        // Check for guaranteed crit/fail cases on 1d20
+        if (num_rolled_dice == 1 && rolled_types[0] == 20) {
+            if (rolled_values[0] == 20) {
+                USBSerial.println("🎯 NAT 20! Forced Happy quote.");
                 pending_quote_type = QUOTE_HAPPY;
-            } else if (avg_efficiency >= 0.45f) {
-                pending_quote_type = QUOTE_NEUTRAL;
-            } else {
+            } else if (rolled_values[0] == 1) {
+                USBSerial.println("💩 NAT 1! Forced Mad quote.");
                 pending_quote_type = QUOTE_MAD;
+            } else if ((esp_random() % 4) == 0) {
+                // 25% chance to show something anyway
+                if (avg_efficiency >= 0.75f) pending_quote_type = QUOTE_HAPPY;
+                else if (avg_efficiency >= 0.45f) pending_quote_type = QUOTE_NEUTRAL;
+                else pending_quote_type = QUOTE_MAD;
+            } else {
+                pending_quote_type = QUOTE_NONE;
             }
         } else {
-            pending_quote_type = QUOTE_NONE;
+            // Multi-dice or non-d20 rolls
+            if ((esp_random() % 4) == 0) {
+                if (avg_efficiency >= 0.95f) {
+                    USBSerial.println("🎯 Efficiency > 95%. Forced Happy quote.");
+                    pending_quote_type = QUOTE_HAPPY;
+                } else if (avg_efficiency <= 0.05f) {
+                    USBSerial.println("💩 Efficiency < 5%. Forced Mad quote.");
+                    pending_quote_type = QUOTE_MAD;
+                } else if (avg_efficiency >= 0.75f) pending_quote_type = QUOTE_HAPPY;
+                else if (avg_efficiency >= 0.45f) pending_quote_type = QUOTE_NEUTRAL;
+                else pending_quote_type = QUOTE_MAD;
+            } else {
+                pending_quote_type = QUOTE_NONE;
+            }
         }
-    }
+
 
     // --- Save roll history ---
     strncpy(last_five_rolls[last_roll_index], last_roll_result, sizeof(last_five_rolls[last_roll_index]));
